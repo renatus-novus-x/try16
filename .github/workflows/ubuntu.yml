@@ -8,93 +8,26 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04  # ubuntu-latest でも可（現状は 24.04）
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v4
 
-      # 念のため（bzip2 が無い場合に備えて）
-      - name: Ensure tools
-        run: |
-          set -eux
-          sudo apt-get update
-          sudo apt-get install -y bzip2
-
       - name: Download and install m68k-xelf
         env:
           TARBALL_URL: https://github.com/yunkya2/elf2x68k/releases/download/20240929/elf2x68k-Linux-20240929.tar.bz2
-          TARBALL: elf2x68k.tar.bz2
         run: |
-          set -euxo pipefail
+          set -euo pipefail
+          wd="$RUNNER_TEMP/m68k-xelf"; rm -rf "$wd"; mkdir -p "$wd"; cd "$wd"
+          curl -fL "$TARBALL_URL" -o t.tar.bz2
+          top="$(tar -tf t.tar.bz2 | sed -n '1{s#/.*##;p}')" && tar -xf t.tar.bz2
+          bin="$(find "$top" -maxdepth 3 -type d \( -name bin -o -path '*/images/bin' \) -print | head -n1)"; [ -n "$bin" ]
+          compgen -G "$bin/*" >/dev/null && chmod +x "$bin/"* || true
+          echo "$(readlink -f "$bin" || realpath "$bin")" >> "$GITHUB_PATH"
 
-          workdir="$RUNNER_TEMP/m68k-xelf"
-          rm -rf "$workdir"
-          mkdir -p "$workdir"
-          cd "$workdir"
-
-          # ダウンロード
-          curl -fL "$TARBALL_URL" -o "$TARBALL"
-
-          # 目録を先に作成してトップディレクトリ名を推定
-          tar -tf "$TARBALL" | tee tar.list
-          top="$(awk -F/ 'NR==1{print $1; exit}' tar.list || true)"
-
-          # 展開
-          tar -xf "$TARBALL"
-
-          # トップディレクトリ存在チェック
-          if [ -z "$top" ] || [ ! -d "$top" ]; then
-            echo "ERROR: 展開トップディレクトリを特定できません。内容を表示します。"
-            cat tar.list
-            exit 1
-          fi
-
-          # bin ディレクトリ探索（<top>/bin と <top>/images/bin の両対応）
-          mapfile -t bins < <(find "$top" -maxdepth 3 -type d \( -name bin -o -path "*/images/bin" \) -print)
-
-          if [ "${#bins[@]}" -eq 0 ]; then
-            echo "ERROR: bin ディレクトリが見つかりません。構成を出力します。"
-            find "$top" -maxdepth 3 -print
-            exit 1
-          fi
-
-          # 中身がある bin を優先して選択（m68k-xelf-gcc 等があれば即決）
-          pick=""
-          for b in "${bins[@]}"; do
-            if compgen -G "$b/*" > /dev/null; then
-              pick="$b"
-              ls "$b" | grep -qE '^m68k-.*-gcc|^m68k-xelf-gcc|elf2x68k\.py$' && break || true
-            fi
-          done
-
-          if [ -z "$pick" ]; then
-            echo "ERROR: bin 候補は見つかったが中身が空でした。候補一覧:"
-            printf '%s\n' "${bins[@]}"
-            exit 1
-          fi
-
-          # 実行ビットを必要に応じて付与（空振りで失敗しないようにガード）
-          if compgen -G "$pick/*" > /dev/null; then
-            chmod +x "$pick/"* || true
-          fi
-
-          # 絶対パスで PATH を追加（相対パスだと次ステップで無効になる）
-          pick_abs="$(readlink -f "$pick" || realpath "$pick")"
-          echo "$pick_abs" >> "$GITHUB_PATH"
-          echo "X68K_BIN_DIR=$pick_abs" >> "$GITHUB_ENV"
-
-          # ここで軽く確認
-          "$pick_abs/m68k-xelf-gcc" --version || true
-          echo "BIN_DIR=$pick_abs"
-          ls -al "$pick_abs"
-
-      - name: make
+      - name: Build
         run: |
-          set -euxo pipefail
-          # PATH が通っているか確認
-          echo "$PATH" | tr ':' '\n' | nl
-          which m68k-xelf-gcc
-          m68k-xelf-gcc --version
+          set -euo pipefail
           cd src
           make -j
 
