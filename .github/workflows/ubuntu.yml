@@ -8,12 +8,13 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-24.04  # ubuntu-latest でも可（現状は 24.04）
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Ensure tools (bzip2 etc.)
+      # 念のため（bzip2 が無い場合に備えて）
+      - name: Ensure tools
         run: |
           set -eux
           sudo apt-get update
@@ -31,55 +32,73 @@ jobs:
           mkdir -p "$workdir"
           cd "$workdir"
 
+          # ダウンロード
           curl -fL "$TARBALL_URL" -o "$TARBALL"
+
+          # 目録を先に作成してトップディレクトリ名を推定
           tar -tf "$TARBALL" | tee tar.list
           top="$(awk -F/ 'NR==1{print $1; exit}' tar.list || true)"
+
+          # 展開
           tar -xf "$TARBALL"
 
-          # bin 探索（<top>/bin と <top>/images/bin の両対応）
-          mapfile -t bins < <(find "$top" -maxdepth 3 -type d \( -name bin -o -path "*/images/bin" \) -print)
-          [ "${#bins[@]}" -gt 0 ] || { echo "ERROR: bin not found"; find "$top" -maxdepth 3 -print; exit 1; }
+          # トップディレクトリ存在チェック
+          if [ -z "$top" ] || [ ! -d "$top" ]; then
+            echo "ERROR: 展開トップディレクトリを特定できません。内容を表示します。"
+            cat tar.list
+            exit 1
+          fi
 
+          # bin ディレクトリ探索（<top>/bin と <top>/images/bin の両対応）
+          mapfile -t bins < <(find "$top" -maxdepth 3 -type d \( -name bin -o -path "*/images/bin" \) -print)
+
+          if [ "${#bins[@]}" -eq 0 ]; then
+            echo "ERROR: bin ディレクトリが見つかりません。構成を出力します。"
+            find "$top" -maxdepth 3 -print
+            exit 1
+          fi
+
+          # 中身がある bin を優先して選択（m68k-xelf-gcc 等があれば即決）
           pick=""
           for b in "${bins[@]}"; do
             if compgen -G "$b/*" > /dev/null; then
               pick="$b"
               ls "$b" | grep -qE '^m68k-.*-gcc|^m68k-xelf-gcc|elf2x68k\.py$' && break || true
             fi
-        done
-          [ -n "$pick" ] || { echo "ERROR: bin candidates empty"; printf '%s\n' "${bins[@]}"; exit 1; }
+          done
 
-        # 実行ビット（空振り防止）
-        compgen -G "$pick/*" > /dev/null && chmod +x "$pick/"* || true
-
-        # ★ ここを絶対パスで！ ★
-        pick_abs="$(readlink -f "$pick" || realpath "$pick")"
-        echo "$pick_abs" >> "$GITHUB_PATH"
-
-        # その場でも軽く確認
-        "$pick_abs/m68k-xelf-gcc" --version || true
-        echo "BIN_DIR=$pick_abs"
-        ls -al "$pick_abs"
-
-      - name: Build
-        run: |
-          set -euxo pipefail
-          which m68k-xelf-gcc || true
-          m68k-xelf-gcc --version || true
-          if [ -f Makefile ]; then
-            make -j
-          elif [ -d src ] && [ -f src/Makefile ]; then
-            cd src && make -j
-          else
-            echo "Makefile が見つかりません。必要に応じてビルドコマンドを調整してください。"
+          if [ -z "$pick" ]; then
+            echo "ERROR: bin 候補は見つかったが中身が空でした。候補一覧:"
+            printf '%s\n' "${bins[@]}"
             exit 1
           fi
 
+          # 実行ビットを必要に応じて付与（空振りで失敗しないようにガード）
+          if compgen -G "$pick/*" > /dev/null; then
+            chmod +x "$pick/"* || true
+          fi
+
+          # 絶対パスで PATH を追加（相対パスだと次ステップで無効になる）
+          pick_abs="$(readlink -f "$pick" || realpath "$pick")"
+          echo "$pick_abs" >> "$GITHUB_PATH"
+          echo "X68K_BIN_DIR=$pick_abs" >> "$GITHUB_ENV"
+
+          # ここで軽く確認
+          "$pick_abs/m68k-xelf-gcc" --version || true
+          echo "BIN_DIR=$pick_abs"
+          ls -al "$pick_abs"
+
+      - name: make
+        run: |
+          set -euxo pipefail
+          # PATH が通っているか確認
+          echo "$PATH" | tr ':' '\n' | nl
+          which m68k-xelf-gcc
+          m68k-xelf-gcc --version
+          cd src
+          make -j
+
       - uses: actions/upload-artifact@v4
         with:
-          name: build-out
-          path: |
-            ./build/**
-            ./src/**.x
-            ./src/**.bin
-            ./src/**.elf
+          name: my-artifact
+          path: src/*.x
