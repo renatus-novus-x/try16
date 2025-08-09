@@ -20,7 +20,11 @@ jobs:
         extracted_dir=$(find . -maxdepth 1 -type d ! -name ".*" | head -n 1)
         echo "EXTRACTED_DIR=$PWD/$extracted_dir" >> $GITHUB_ENV
         echo "$PWD/$extracted_dir/bin" >> $GITHUB_PATH
-        chmod +x $PWD/$extracted_dir/bin/*
+        if compgen -G "$PWD/$extracted_dir/bin/*" > /dev/null; then
+          chmod +x "$PWD/$extracted_dir/bin/"*
+        else
+          echo "WARN: $PWD/$extracted_dir/bin is empty"
+        fi
 
     - name: make
       run: |
