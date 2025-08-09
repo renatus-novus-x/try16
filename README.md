@@ -17,4 +17,4 @@ Launch the program(try16) and start **firing**.
 - At the end, you'll see your **average shots per second**.
 
 ## Download
-- [TRY16.COM](https://raw.githubusercontent.com/renatus-novus-x/try16/main/bin/try16.x)
+- [try16.x](https://raw.githubusercontent.com/renatus-novus-x/try16/main/bin/try16.x)
