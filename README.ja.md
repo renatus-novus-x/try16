@@ -2,7 +2,7 @@
 
 [![ubuntu](https://github.com/renatus-novus-x/try16/workflows/ubuntu/badge.svg)](https://github.com/renatus-novus-x/try16/actions?query=workflow%3Aubuntu)
 
-<img src="https://raw.githubusercontent.com/renatus-novus-x/try16/main/images/tether.png" title="tether" />
+<img src="https://raw.githubusercontent.com/renatus-novus-x/try16/main/images/tether.gif" title="tether" />
 
 # try16
 レトロスタイルの連射カウンター。速く撃て、さらに速く数えろ。頂点を目指せ！  

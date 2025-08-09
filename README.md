@@ -2,7 +2,7 @@
 
 [![ubuntu](https://github.com/renatus-novus-x/try16/workflows/ubuntu/badge.svg)](https://github.com/renatus-novus-x/try16/actions?query=workflow%3Aubuntu)
 
-<img src="https://raw.githubusercontent.com/renatus-novus-x/try16/main/images/tether.png" title="tether" />
+<img src="https://raw.githubusercontent.com/renatus-novus-x/try16/main/images/tether.gif" title="tether" />
 
 # try16
 A retro-style rapid fire counter. Fire fast, count faster. Be the one!  
