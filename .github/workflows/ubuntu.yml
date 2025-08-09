@@ -32,60 +32,34 @@ jobs:
           cd "$workdir"
 
           curl -fL "$TARBALL_URL" -o "$TARBALL"
-          # 中身確認用に目録を保存（デバッグしやすくする）
           tar -tf "$TARBALL" | tee tar.list
-
-          # トップディレクトリ名（大半の配布物は先頭要素がディレクトリ）
-          top="$(awk -F/ 'NR==1{print $1; exit}' tar.list)"
-          if [ -z "$top" ] || [ "$top" = "." ]; then
-            # 念のためフォールバック：サブディレクトリを含む最初の要素
-            top="$(awk -F/ '$0 ~ /\// {print $1; exit}' tar.list || true)"
-          fi
-
-          # 展開
+          top="$(awk -F/ 'NR==1{print $1; exit}' tar.list || true)"
           tar -xf "$TARBALL"
 
-          if [ -z "$top" ] || [ ! -d "$top" ]; then
-            echo "ERROR: 展開トップディレクトリを特定できません。内容を表示します。"
-            cat tar.list
-            exit 1
-          fi
-
-          # 候補の bin ディレクトリを列挙（<top>/bin と <top>/images/bin の両対応）
+          # bin 探索（<top>/bin と <top>/images/bin の両対応）
           mapfile -t bins < <(find "$top" -maxdepth 3 -type d \( -name bin -o -path "*/images/bin" \) -print)
+          [ "${#bins[@]}" -gt 0 ] || { echo "ERROR: bin not found"; find "$top" -maxdepth 3 -print; exit 1; }
 
-          if [ "${#bins[@]}" -eq 0 ]; then
-            echo "ERROR: bin ディレクトリが見つかりません。構成を出力します。"
-            find "$top" -maxdepth 3 -print
-            exit 1
-          fi
-
-          # 優先度: 実ファイルが入っている bin / m68k-xelf-gcc を含む bin
           pick=""
           for b in "${bins[@]}"; do
             if compgen -G "$b/*" > /dev/null; then
               pick="$b"
-              # コンパイラっぽいものがあれば即決
               ls "$b" | grep -qE '^m68k-.*-gcc|^m68k-xelf-gcc|elf2x68k\.py$' && break || true
             fi
-          done
+        done
+          [ -n "$pick" ] || { echo "ERROR: bin candidates empty"; printf '%s\n' "${bins[@]}"; exit 1; }
 
-          if [ -z "$pick" ]; then
-            echo "ERROR: 候補は見つかったが中身が空でした。候補一覧:"
-            printf '%s\n' "${bins[@]}"
-            exit 1
-          fi
+        # 実行ビット（空振り防止）
+        compgen -G "$pick/*" > /dev/null && chmod +x "$pick/"* || true
 
-          # 実行ビット付与（空振り防止）
-          if compgen -G "$pick/*" > /dev/null; then
-            chmod +x "$pick/"* || true
-          fi
+        # ★ ここを絶対パスで！ ★
+        pick_abs="$(readlink -f "$pick" || realpath "$pick")"
+        echo "$pick_abs" >> "$GITHUB_PATH"
 
-          # ジョブ全体に PATH を通す
-          echo "$pick" >> "$GITHUB_PATH"
-
-          echo "BIN_DIR=$pick"
-          ls -al "$pick"
+        # その場でも軽く確認
+        "$pick_abs/m68k-xelf-gcc" --version || true
+        echo "BIN_DIR=$pick_abs"
+        ls -al "$pick_abs"
 
       - name: Build
         run: |
