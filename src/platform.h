@@ -135,12 +135,8 @@ uint16_t platform_elapsed_ticks(clock_t start, clock_t end) {
 static inline unsigned char platform_gttrig(int no) {
 #if X68K
   if (no == 0) { // keyboard
-    static unsigned char prev = 0;
     unsigned char g6 = _iocs_bitsns(6);
-    unsigned char cur = (g6 >> 5) & 1;
-    unsigned char edge = (cur && !prev);
-    prev = cur;
-    return edge;
+    return (g6 >> 5) & 1;
   } else {       // joystick
     no = no -1;
     return !(_iocs_joyget(no) & 0x20);
