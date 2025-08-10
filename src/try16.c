@@ -6,6 +6,7 @@
 #include "platform.h"
 
 int main(int argc, char* argv[]) {
+  platform_init();
   printf("Try16: A retro-style rapid fire counter.\n");
   printf("Strike SPACE key or Trigger-A button to start\n");
   int trigger_source = -1;

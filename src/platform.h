@@ -8,7 +8,13 @@
 #define CLOCKS_PER_SEC (60)
 #define JIFFY          (0xfc9e)
 
-clock_t platform_clock(void) {
+void platform_init(){
+  uint8_t* ptr = (uint8_t*)JIFFY;
+  ptr[0] = 0;
+  ptr[1] = 0;
+}
+
+clock_t platform_clock() {
   uint8_t* ptr = (uint8_t*)JIFFY;
   return (clock_t)(ptr[0] | (ptr[1] << 8));
 }
@@ -96,31 +102,20 @@ unsigned char platform_gttrig(int no) {
 
 #include <x68k/iocs.h>
 
-#undef  CLOCKS_PER_SEC
-#define CLOCKS_PER_SEC 100
+volatile uint32_t vbl_count = 0;
 
-static inline uint32_t trap_ontime(void) {
-  uint32_t cs;
-  __asm__ volatile(
-    "moveq  #0x7F,%%d0 \n\t"   // _ONTIME
-    "trap   #15        \n\t"   // IOCS
-    "move.l %%d0,%0    \n\t"
-    : "=d"(cs)
-    :
-    : "d0","d1","a0","cc","memory"
-  );
-  return cs;
+__attribute__((interrupt_handler))
+static void vbl_handler(void) { vbl_count++; }
+
+void platform_init(){
+  _iocs_vdispst((void*)vbl_handler, 0, 1);
 }
 
+#undef  CLOCKS_PER_SEC
+#define CLOCKS_PER_SEC 60
+
 clock_t clock(void) {
-  static uint32_t t0 = 0;
-  uint32_t now = trap_ontime();
-  if (t0 == 0) {
-    t0 = now; // initial time
-    return 0;
-  }
-  uint32_t diff_cs = now - t0;
-  return (clock_t)diff_cs;    // CLOCK
+  return (clock_t)(vbl_count);
 }
 #endif
 
