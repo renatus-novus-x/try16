@@ -25,6 +25,11 @@ uint16_t platform_elapsed_ticks(clock_t start, clock_t end) {
 
 float platform_elapsed_sec(clock_t start, clock_t end) {
   return platform_elapsed_ticks(start, end) / (float)CLOCKS_PER_SEC;
+
+float platform_elapsed_sec(clock_t start, clock_t end){
+  return (float)platform_elapsed_ticks(start, end) / (float)CLOCKS_PER_SEC;
+}
+
 }
 
 struct regs {
