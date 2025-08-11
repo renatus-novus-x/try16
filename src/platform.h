@@ -19,17 +19,22 @@ clock_t platform_clock() {
   return (clock_t)(ptr[0] | (ptr[1] << 8));
 }
 
-uint16_t platform_elapsed_ticks(clock_t start, clock_t end) {
-  return (uint16_t)((end - start) & 0xFFFF);
+uint32_t platform_seconds_to_ticks(uint32_t sec){
+  return sec * (uint32_t)CLOCKS_PER_SEC;
 }
 
-float platform_elapsed_sec(clock_t start, clock_t end) {
-  return platform_elapsed_ticks(start, end) / (float)CLOCKS_PER_SEC;
+uint16_t platform_elapsed_ticks(clock_t start, clock_t end){
+  return (uint16_t)((uint16_t)end - (uint16_t)start); /* 16bit wrap */
+}
 
 float platform_elapsed_sec(clock_t start, clock_t end){
   return (float)platform_elapsed_ticks(start, end) / (float)CLOCKS_PER_SEC;
 }
 
+static inline void platform_wait_next_tick(clock_t* now){
+  clock_t base = *now;
+  while (platform_clock() == base) { /* busy-wait 1/60 */ }
+  *now = base + 1;
 }
 
 struct regs {
@@ -96,61 +101,85 @@ CALBIO01:
 unsigned char platform_gttrig(int no) {
   struct regs r;
   r.a = (char)no;
-  calbio(0x00d8, &r);
+  calbio(0x00d8, &r); /* GTTRIG */
   return (r.a != 0);
 }
 
-#else // Non-MSX
+#else  /* ---------------- Non MSX ---------------- */
 
 #include <time.h>
+
 #if X68K
 
 #include <x68k/iocs.h>
 
-volatile uint32_t vbl_count = 0;
-
-__attribute__((interrupt_handler))
-static void vbl_handler(void) { vbl_count++; }
-
-void platform_init(){
-  _iocs_vdispst((void*)vbl_handler, 0, 1);
-}
-
 #undef  CLOCKS_PER_SEC
-#define CLOCKS_PER_SEC 60
+#define CLOCKS_PER_SEC 100
 
-clock_t clock(void) {
-  return (clock_t)(vbl_count);
-}
-#endif
-
-clock_t platform_clock(void) {
-  return clock();
-}
-
-float platform_elapsed_sec(clock_t start, clock_t end) {
-  float sec = (float)(end - start) / CLOCKS_PER_SEC;
-  return (sec <= 0.0f) ? 1e-6f : sec;
-}
-
-uint16_t platform_elapsed_ticks(clock_t start, clock_t end) {
-  return (uint16_t)(platform_elapsed_sec(start, end) * 60.0f);
+static inline uint32_t trap_ontime_cs(void){
+  uint32_t cs;
+  __asm__ volatile(
+    "moveq  #0x7F,%%d0 \n\t"  /* _ONTIME */
+    "trap   #15        \n\t"  /* IOCS    */
+    "move.l %%d0,%0    \n\t"
+    : "=d"(cs)
+    :
+    : "d0","d1","a0","cc","memory"
+  );
+  return cs;
 }
 
-static inline unsigned char platform_gttrig(int no) {
-#if X68K
+static inline void platform_init(void){
+  // _iocs_vdispst()
+}
+
+static inline clock_t platform_clock(void){
+  return (clock_t)trap_ontime_cs();
+}
+
+static inline uint32_t platform_seconds_to_ticks(uint32_t sec){
+  return sec * (uint32_t)CLOCKS_PER_SEC;
+}
+
+static inline uint32_t platform_elapsed_ticks(clock_t start, clock_t end){
+  return (uint32_t)((uint32_t)end - (uint32_t)start);
+}
+
+static inline float platform_elapsed_sec(clock_t start, clock_t end){
+  return (float)platform_elapsed_ticks(start, end) / (float)CLOCKS_PER_SEC;
+}
+
+static inline void platform_wait_next_tick(clock_t* now){
+  clock_t base = *now;
+  while ((uint32_t)(trap_ontime_cs() - (uint32_t)base) == 0) { /* busy-wait 1/100 */ }
+  *now = base + 1;
+}
+
+static inline unsigned char platform_gttrig(int no){
   if (no == 0) { // keyboard
-    unsigned char g6 = _iocs_bitsns(6);
+    unsigned char g6 = _iocs_bitsns(6); // SPACE: group6 bit5
     return (g6 >> 5) & 1;
   } else {       // joystick
     no = no -1;
-    return !(_iocs_joyget(no) & 0x20);
+    return !(_iocs_joyget(no) & 0x20); // A-button
   }
-#else
-  return 0; // dummy trigger for non MSX/X68k
-#endif
 }
 
+#else
+/* ---------------- ÅistubÅj ---------------- */
+#ifndef CLOCKS_PER_SEC
+#define CLOCKS_PER_SEC 60
 #endif
 
-#endif // PLATFORM_H
+static inline void     platform_init(void){}
+static inline clock_t  platform_clock(void){ return (clock_t)clock(); }
+static inline uint32_t platform_seconds_to_ticks(uint32_t sec){ return sec * (uint32_t)CLOCKS_PER_SEC; }
+static inline uint32_t platform_elapsed_ticks(clock_t start, clock_t end){ return (uint32_t)((uint32_t)end - (uint32_t)start); }
+static inline float    platform_elapsed_sec(clock_t start, clock_t end){ return (float)platform_elapsed_ticks(start,end) / (float)CLOCKS_PER_SEC; }
+static inline void     platform_wait_next_tick(clock_t* now){ clock_t b=*now; while (platform_clock()==b){} *now=b+1; }
+static inline unsigned char platform_gttrig(int no){ (void)no; return 0; }
+
+#endif /* X68K */
+#endif /* MSX */
+
+#endif /* PLATFORM_H */
